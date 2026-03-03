@@ -5,367 +5,734 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Gallery</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; }
-        body { background: #f0f0f0; font-family: Arial, sans-serif; margin: 0; }
-        h1 { text-align: center; font-size: 1.2rem; padding: 16px 0 0; }
-        p.subtitle { text-align: center; font-size: 0.85rem; color: #555; margin: 4px 0 0; }
-        #controls {
-            padding: 12px 16px;
-            text-align: center;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            justify-content: center;
-            align-items: center;
+        :root {
+            --bg: #0a0a0c;
+            --surface: #141418;
+            --surface2: #1c1c22;
+            --border: #2a2a33;
+            --text: #e0e0e6;
+            --text-dim: #7a7a8a;
+            --accent: #5b8cf5;
+            --accent-dim: #3a5fa0;
+            --green: #4ecb71;
+            --red: #f05555;
+            --orange: #e8a040;
         }
-        #search { width: 200px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        #board { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        button { padding: 7px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
-        button:active { background: #1565c0; }
-        #gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 8px;
-            padding: 12px;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            min-height: 100vh;
         }
-        .item {
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 4px;
-            overflow: hidden;
-            position: relative;
-        }
-        .item img, .item video { width: 100%; height: auto; display: block; }
-        .item a { display: block; }
-        .convert-btn {
-            position: absolute; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.55);
-            color: white; font-size: 13px; text-align: center;
-            cursor: pointer; padding: 8px;
-            gap: 6px;
-        }
-        .convert-btn .icon { font-size: 28px; }
-        .convert-btn .label { font-size: 11px; opacity: 0.85; }
-        .progress-wrap {
-            position: absolute; bottom: 0; left: 0; right: 0;
-            background: rgba(0,0,0,0.6); color: white;
-            font-size: 11px; padding: 6px 8px; text-align: center;
-        }
-        .progress-bar {
-            height: 4px; background: #4caf50; border-radius: 2px;
-            margin-top: 4px; transition: width 0.2s;
-        }
-        #status { color: #555; padding: 2px 16px; font-size: 0.85rem; font-style: italic; text-align: center; }
-        #error { color: red; padding: 4px 16px; white-space: pre-line; font-size: 0.85rem; text-align: center; }
-        #ffmpeg-status { text-align: center; font-size: 0.8rem; color: #888; padding: 4px; }
-    </style>
-</head>
-<body>
-    <h1>Media Gallery — 4chan &amp; Danbooru</h1>
-    <p class="subtitle">Tap thumbnails for full image. WebM videos convert to MP4 on-device for iPhone.</p>
-    <div id="controls">
-        <input id="search" type="text" placeholder="Search tags…">
-        <select id="board">
-            <option value="gif">gif (Animated)</option>
-            <option value="hc">hc (Images)</option>
-            <option value="s">s (Photos)</option>
-            <option value="hm">hm (Portraits)</option>
-            <option value="hr">hr (Hi-Res)</option>
-            <option value="y">y (Art)</option>
-        </select>
-        <button onclick="loadContent()">Load</button>
-    </div>
-    <div id="ffmpeg-status">⏳ Loading FFmpeg for WebM support…</div>
-    <div id="status"></div>
-    <div id="error"></div>
-    <div id="gallery"></div>
 
 ```
+    /* ── Header ── */
+    header {
+        padding: 20px 20px 0;
+        text-align: center;
+    }
+    header h1 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--accent);
+    }
+    header p {
+        font-size: 0.78rem;
+        color: var(--text-dim);
+        margin-top: 4px;
+    }
+
+    /* ── Controls ── */
+    #controls {
+        padding: 16px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        align-items: center;
+    }
+    #search {
+        width: 220px;
+        padding: 8px 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 13px;
+        font-family: 'DM Sans', sans-serif;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    #search:focus { border-color: var(--accent); }
+    #search::placeholder { color: var(--text-dim); }
+
+    #board, #thread-limit {
+        padding: 8px 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 13px;
+        font-family: 'DM Sans', sans-serif;
+        outline: none;
+        cursor: pointer;
+    }
+    #board option, #thread-limit option {
+        background: var(--surface);
+        color: var(--text);
+    }
+
+    .btn {
+        padding: 8px 20px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: 'DM Sans', sans-serif;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+    }
+    .btn:hover { background: #4a7de8; }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-stop { background: var(--red); }
+    .btn-stop:hover { background: #d04444; }
+
+    /* ── Status ── */
+    #status-bar {
+        text-align: center;
+        padding: 4px 20px;
+        font-size: 0.78rem;
+        color: var(--text-dim);
+        font-family: 'JetBrains Mono', monospace;
+    }
+    #status-bar .count { color: var(--green); font-weight: 600; }
+    #status-bar .error-text { color: var(--red); }
+    #status-bar .warn-text { color: var(--orange); }
+
+    #progress-bar-container {
+        max-width: 400px;
+        margin: 0 auto 8px;
+        height: 3px;
+        background: var(--surface2);
+        border-radius: 2px;
+        overflow: hidden;
+        display: none;
+    }
+    #progress-bar-fill {
+        height: 100%;
+        background: var(--accent);
+        width: 0%;
+        transition: width 0.3s;
+        border-radius: 2px;
+    }
+
+    #ffmpeg-status {
+        text-align: center;
+        font-size: 0.72rem;
+        color: var(--text-dim);
+        padding: 2px 20px 8px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Gallery ── */
+    #gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+        gap: 6px;
+        padding: 8px 12px 40px;
+    }
+    .item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+        aspect-ratio: 1;
+        cursor: pointer;
+        transition: border-color 0.2s, transform 0.15s;
+    }
+    .item:hover { border-color: var(--accent-dim); transform: scale(1.01); }
+    .item img, .item video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .item .ext-badge {
+        position: absolute;
+        top: 6px; right: 6px;
+        background: rgba(0,0,0,0.7);
+        color: #ccc;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        text-transform: uppercase;
+        pointer-events: none;
+    }
+    .item .file-info {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        background: linear-gradient(transparent, rgba(0,0,0,0.8));
+        padding: 20px 8px 6px;
+        font-size: 10px;
+        color: #bbb;
+        font-family: 'JetBrains Mono', monospace;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .item:hover .file-info { opacity: 1; }
+
+    /* ── Convert overlay for WebM ── */
+    .convert-btn {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.6);
+        color: white; text-align: center;
+        cursor: pointer; padding: 8px; gap: 4px;
+    }
+    .convert-btn .icon { font-size: 28px; }
+    .convert-btn .label { font-size: 10px; opacity: 0.7; font-family: 'JetBrains Mono', monospace; }
+    .progress-wrap {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        background: rgba(0,0,0,0.7); color: white;
+        font-size: 10px; padding: 6px 8px; text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .progress-fill {
+        height: 3px; background: var(--green); border-radius: 2px;
+        margin-top: 4px; transition: width 0.2s;
+    }
+
+    /* ── Lightbox ── */
+    #lightbox {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.92);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+        cursor: zoom-out;
+    }
+    #lightbox.active { display: flex; }
+    #lightbox img, #lightbox video {
+        max-width: 95vw;
+        max-height: 95vh;
+        object-fit: contain;
+        border-radius: 4px;
+    }
+    #lightbox-close {
+        position: absolute; top: 16px; right: 20px;
+        color: white; font-size: 28px;
+        cursor: pointer; z-index: 1001;
+        font-family: 'JetBrains Mono', monospace;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+    #lightbox-close:hover { opacity: 1; }
+
+    /* ── Empty state ── */
+    #empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-dim);
+        display: none;
+    }
+    #empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    #empty-state p { font-size: 0.85rem; }
+
+    @media (max-width: 500px) {
+        #gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px; padding: 6px 8px 40px; }
+        #search { width: 160px; }
+    }
+</style>
+```
+
+</head>
+<body>
+    <header>
+        <h1>Media Gallery</h1>
+        <p>4chan thread scraper &amp; Danbooru — tap for full view, WebM→MP4 on iOS</p>
+    </header>
+
+```
+<div id="controls">
+    <input id="search" type="text" placeholder="Search tags / keywords…">
+    <select id="board">
+        <option value="gif">/gif/ — Animated</option>
+        <option value="wg">/wg/ — Wallpapers</option>
+        <option value="w">/w/ — Anime Walls</option>
+        <option value="g">/g/ — Technology</option>
+        <option value="a">/a/ — Anime</option>
+        <option value="v">/v/ — Video Games</option>
+        <option value="vg">/vg/ — Video Game Gen</option>
+        <option value="mu">/mu/ — Music</option>
+        <option value="o">/o/ — Auto</option>
+        <option value="p">/p/ — Photography</option>
+        <option value="tv">/tv/ — Television</option>
+        <option value="k">/k/ — Weapons</option>
+        <option value="an">/an/ — Animals</option>
+        <option value="n">/n/ — Transport</option>
+        <option value="po">/po/ — Papercraft</option>
+        <option value="sci">/sci/ — Science</option>
+        <option value="diy">/diy/ — DIY</option>
+        <option value="c">/c/ — Anime Cute</option>
+        <option value="m">/m/ — Mecha</option>
+    </select>
+    <select id="thread-limit">
+        <option value="3">3 threads</option>
+        <option value="5" selected>5 threads</option>
+        <option value="10">10 threads</option>
+        <option value="20">20 threads</option>
+        <option value="50">All matching</option>
+    </select>
+    <button class="btn" id="load-btn" onclick="startLoad()">Load</button>
+    <button class="btn btn-stop" id="stop-btn" onclick="stopLoad()" style="display:none;">Stop</button>
+</div>
+
+<div id="progress-bar-container"><div id="progress-bar-fill"></div></div>
+<div id="status-bar"></div>
+<div id="ffmpeg-status"></div>
+<div id="gallery"></div>
+<div id="empty-state"><div class="icon">📭</div><p>No media found. Try different search terms or board.</p></div>
+
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox(event)">
+    <span id="lightbox-close" onclick="closeLightbox(event)">✕</span>
+    <div id="lightbox-content"></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
-
 <script>
-    const gallery         = document.getElementById('gallery');
-    const errorDiv        = document.getElementById('error');
-    const statusDiv       = document.getElementById('status');
-    const ffmpegStatusDiv = document.getElementById('ffmpeg-status');
-    const searchInput     = document.getElementById('search');
-    const boardSelect     = document.getElementById('board');
+const gallery = document.getElementById('gallery');
+const statusBar = document.getElementById('status-bar');
+const ffmpegStatusDiv = document.getElementById('ffmpeg-status');
+const searchInput = document.getElementById('search');
+const boardSelect = document.getElementById('board');
+const threadLimitSelect = document.getElementById('thread-limit');
+const loadBtn = document.getElementById('load-btn');
+const stopBtn = document.getElementById('stop-btn');
+const progressContainer = document.getElementById('progress-bar-container');
+const progressFill = document.getElementById('progress-bar-fill');
+const emptyState = document.getElementById('empty-state');
+const lightbox = document.getElementById('lightbox');
+const lightboxContent = document.getElementById('lightbox-content');
 
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-    // ── FFmpeg ────────────────────────────────────────────────────────────
-    let ffmpegReady   = false;
-    let ffmpegLoading = false;
-    let ffmpegInst    = null;
+let abortController = null;
+let totalMediaCount = 0;
 
-    async function ensureFFmpeg() {
-        if (ffmpegReady) return ffmpegInst;
-        if (ffmpegLoading) {
-            while (!ffmpegReady) await new Promise(r => setTimeout(r, 200));
-            return ffmpegInst;
-        }
-        ffmpegLoading = true;
-        try {
-            const { FFmpeg } = FFmpegWASM;
-            const { toBlobURL } = FFmpegUtil;
-            ffmpegInst = new FFmpeg();
-            const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
-            await ffmpegInst.load({
-                coreURL: await toBlobURL(`${base}/ffmpeg-core.js`,   'text/javascript'),
-                wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-            });
-            ffmpegReady = true;
-            ffmpegStatusDiv.textContent = '✅ FFmpeg ready — WebM videos convert on tap';
-        } catch (e) {
-            ffmpegStatusDiv.textContent = '⚠️ FFmpeg failed to load — WebM may not play on iPhone';
-            console.error('FFmpeg load error:', e);
-        }
+// ── FFmpeg ──────────────────────────────────────────────────────────
+let ffmpegReady = false;
+let ffmpegLoading = false;
+let ffmpegInst = null;
+
+async function ensureFFmpeg() {
+    if (ffmpegReady) return ffmpegInst;
+    if (ffmpegLoading) {
+        while (!ffmpegReady) await new Promise(r => setTimeout(r, 200));
         return ffmpegInst;
     }
-
-    ensureFFmpeg(); // preload in background
-
-    // ── Proxy helpers ─────────────────────────────────────────────────────
-    const PROXIES = [
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    ];
-
-    function showError(msg) { errorDiv.textContent += msg + '\n'; }
-    function setStatus(msg) { statusDiv.textContent = msg; }
-
-    async function fetchWithFallback(url) {
-        let lastErr;
-        for (const mkProxy of PROXIES) {
-            try {
-                const res = await fetch(mkProxy(url), { signal: AbortSignal.timeout(8000) });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return JSON.parse(await res.text());
-            } catch (e) { lastErr = e; }
-        }
-        throw new Error(lastErr?.message || 'All proxies failed');
+    ffmpegLoading = true;
+    try {
+        const { FFmpeg } = FFmpegWASM;
+        const { toBlobURL } = FFmpegUtil;
+        ffmpegInst = new FFmpeg();
+        const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+        await ffmpegInst.load({
+            coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+            wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        ffmpegReady = true;
+        ffmpegStatusDiv.textContent = '✅ FFmpeg ready — WebM→MP4 conversion available';
+    } catch (e) {
+        ffmpegStatusDiv.textContent = '⚠️ FFmpeg failed — WebM may not play on iOS';
+        console.error('FFmpeg load error:', e);
     }
+    return ffmpegInst;
+}
+ensureFFmpeg();
 
-    async function fetchBinaryWithFallback(url) {
-        let lastErr;
-        for (const mkProxy of PROXIES) {
-            try {
-                const res = await fetch(mkProxy(url), { signal: AbortSignal.timeout(60000) });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return new Uint8Array(await res.arrayBuffer());
-            } catch (e) { lastErr = e; }
-        }
-        throw new Error(lastErr?.message || 'Could not download file');
-    }
+// ── CORS Proxy ─────────────────────────────────────────────────────
+const PROXIES = [
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+];
 
-    // ── WebM → MP4 conversion ─────────────────────────────────────────────
-    async function convertWebmToMp4(webmUrl, onProgress) {
-        const ff = await ensureFFmpeg();
-        if (!ff) throw new Error('FFmpeg not available');
-
-        const progressHandler = ({ progress }) => onProgress && onProgress(Math.round(Math.min(progress, 1) * 100));
-        ff.on('progress', progressHandler);
-
+async function fetchJSON(url, signal) {
+    let lastErr;
+    for (const mkProxy of PROXIES) {
         try {
-            const data = await fetchBinaryWithFallback(webmUrl);
-            await ff.writeFile('in.webm', data);
-            await ff.exec([
-                '-i', 'in.webm',
-                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
-                '-c:a', 'aac',
-                '-movflags', '+faststart',
-                'out.mp4'
-            ]);
-            const mp4 = await ff.readFile('out.mp4');
-            await ff.deleteFile('in.webm');
-            await ff.deleteFile('out.mp4');
-            return URL.createObjectURL(new Blob([mp4.buffer], { type: 'video/mp4' }));
-        } finally {
-            ff.off('progress', progressHandler);
+            const res = await fetch(mkProxy(url), { signal, cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return JSON.parse(await res.text());
+        } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            lastErr = e;
         }
     }
+    throw new Error(lastErr?.message || 'All proxies failed');
+}
 
-    // ── makeVideo helper ──────────────────────────────────────────────────
-    function makeVideoElement(src) {
-        const v = document.createElement('video');
-        v.src = src;
-        v.controls = true;
-        v.loop = true;
-        v.muted = true;
-        v.playsInline = true;
-        v.autoplay = true;
-        v.setAttribute('playsinline', '');
-        v.setAttribute('webkit-playsinline', '');
-        v.style.width = '100%';
-        return v;
+async function fetchBinary(url, signal) {
+    let lastErr;
+    for (const mkProxy of PROXIES) {
+        try {
+            const res = await fetch(mkProxy(url), { signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return new Uint8Array(await res.arrayBuffer());
+        } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            lastErr = e;
+        }
     }
+    throw new Error(lastErr?.message || 'Download failed');
+}
 
-    // ── Gallery item ──────────────────────────────────────────────────────
-    function createGalleryItem(thumb, full, ext) {
-        const item = document.createElement('div');
-        item.className = 'item';
-        const extLower = ext.toLowerCase();
+// ── Status helpers ─────────────────────────────────────────────────
+function setStatus(html) { statusBar.innerHTML = html; }
+function setProgress(pct) {
+    progressContainer.style.display = pct < 0 ? 'none' : 'block';
+    progressFill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+}
 
-        // ── GIF ──
-        if (extLower.includes('gif')) {
+// ── Lightbox ───────────────────────────────────────────────────────
+function openLightbox(fullUrl, ext) {
+    lightboxContent.innerHTML = '';
+    const e = ext.toLowerCase();
+    if (e === '.webm' || e === '.mp4' || e === '.gif') {
+        if (e === '.gif') {
             const img = document.createElement('img');
-            img.src = full; img.loading = 'lazy'; img.style.width = '100%';
-            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
-            item.appendChild(img);
-            return item;
+            img.src = fullUrl;
+            lightboxContent.appendChild(img);
+        } else {
+            const v = document.createElement('video');
+            v.src = fullUrl; v.controls = true; v.autoplay = true;
+            v.loop = true; v.playsInline = true;
+            v.style.maxWidth = '95vw'; v.style.maxHeight = '95vh';
+            lightboxContent.appendChild(v);
         }
-
-        // ── MP4 ──
-        if (extLower.includes('mp4')) {
-            const v = makeVideoElement(full);
-            v.autoplay = false;
-            v.preload = 'metadata';
-            v.onerror = () => {
-                const p = document.createElement('p');
-                p.textContent = '⚠ Video failed'; p.style.cssText = 'color:red;padding:8px;text-align:center';
-                item.replaceChild(p, v);
-            };
-            item.appendChild(v);
-            return item;
-        }
-
-        // ── WebM ──
-        if (extLower.includes('webm')) {
-            const thumbImg = document.createElement('img');
-            thumbImg.src = thumb; thumbImg.loading = 'lazy'; thumbImg.style.width = '100%';
-            thumbImg.onerror = () => { thumbImg.src = 'https://placehold.co/200x200?text=No+Preview'; };
-            item.appendChild(thumbImg);
-
-            if (isSafari) {
-                // Convert overlay
-                const overlay = document.createElement('div');
-                overlay.className = 'convert-btn';
-                overlay.innerHTML = `<span class="icon">▶</span><span>Tap to Convert &amp; Play</span><span class="label">WebM → MP4 on-device</span>`;
-                item.appendChild(overlay);
-
-                let converting = false;
-                overlay.addEventListener('click', async () => {
-                    if (converting) return;
-                    converting = true;
-                    overlay.innerHTML = `<span class="icon">⚙️</span><span>Converting…</span>`;
-
-                    const progressWrap = document.createElement('div');
-                    progressWrap.className = 'progress-wrap';
-                    const label = document.createElement('div');
-                    label.textContent = 'Starting…';
-                    const bar = document.createElement('div');
-                    bar.className = 'progress-bar'; bar.style.width = '0%';
-                    progressWrap.appendChild(label);
-                    progressWrap.appendChild(bar);
-                    item.appendChild(progressWrap);
-
-                    try {
-                        const mp4Url = await convertWebmToMp4(full, pct => {
-                            label.textContent = `Converting: ${pct}%`;
-                            bar.style.width = pct + '%';
-                        });
-                        item.innerHTML = '';
-                        const v = makeVideoElement(mp4Url);
-                        item.appendChild(v);
-                        v.play().catch(() => {});
-                    } catch (err) {
-                        item.removeChild(overlay);
-                        item.removeChild(progressWrap);
-                        const p = document.createElement('p');
-                        p.textContent = '⚠ Convert failed: ' + err.message;
-                        p.style.cssText = 'color:red;padding:8px;font-size:11px;text-align:center';
-                        item.appendChild(p);
-                    }
-                });
-            } else {
-                // Non-Safari: play WebM directly
-                item.innerHTML = '';
-                const v = makeVideoElement(full);
-                v.autoplay = false; v.preload = 'metadata';
-                item.appendChild(v);
-            }
-            return item;
-        }
-
-        // ── Static image ──
-        const link = document.createElement('a');
-        link.href = full;
+    } else {
         const img = document.createElement('img');
-        img.src = thumb; img.loading = 'lazy';
-        img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
-        link.appendChild(img);
-        link.onclick = e => {
-            e.preventDefault();
-            const fi = document.createElement('img');
-            fi.src = full; fi.style.width = '100%';
-            fi.onerror = () => { fi.src = 'https://placehold.co/200x200?text=Load+Error'; };
-            item.replaceChild(fi, link);
-        };
-        item.appendChild(link);
+        img.src = fullUrl;
+        lightboxContent.appendChild(img);
+    }
+    lightbox.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox(e) {
+    if (e && e.target !== lightbox && e.target !== document.getElementById('lightbox-close')) return;
+    lightbox.classList.remove('active');
+    lightboxContent.innerHTML = '';
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox({ target: lightbox }); });
+
+// ── WebM → MP4 ────────────────────────────────────────────────────
+async function convertWebmToMp4(webmUrl, onProgress) {
+    const ff = await ensureFFmpeg();
+    if (!ff) throw new Error('FFmpeg not available');
+    const handler = ({ progress }) => onProgress && onProgress(Math.round(Math.min(progress, 1) * 100));
+    ff.on('progress', handler);
+    try {
+        const data = await fetchBinary(webmUrl);
+        await ff.writeFile('in.webm', data);
+        await ff.exec(['-i', 'in.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart', 'out.mp4']);
+        const mp4 = await ff.readFile('out.mp4');
+        await ff.deleteFile('in.webm');
+        await ff.deleteFile('out.mp4');
+        return URL.createObjectURL(new Blob([mp4.buffer], { type: 'video/mp4' }));
+    } finally { ff.off('progress', handler); }
+}
+
+// ── Format file size ──────────────────────────────────────────────
+function fmtSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+// ── Gallery item creation ─────────────────────────────────────────
+function createGalleryItem(thumbUrl, fullUrl, ext, filesize) {
+    const item = document.createElement('div');
+    item.className = 'item';
+    const e = ext.toLowerCase();
+
+    // Extension badge
+    const badge = document.createElement('span');
+    badge.className = 'ext-badge';
+    badge.textContent = e.replace('.', '');
+
+    // File info overlay
+    const info = document.createElement('div');
+    info.className = 'file-info';
+    info.textContent = fmtSize(filesize);
+
+    // ── GIF ──
+    if (e === '.gif') {
+        const img = document.createElement('img');
+        img.src = fullUrl; img.loading = 'lazy';
+        img.onerror = () => { img.src = 'https://placehold.co/200x200/1c1c22/555?text=Error'; };
+        item.appendChild(img);
+        item.appendChild(badge);
+        item.appendChild(info);
+        item.addEventListener('click', () => openLightbox(fullUrl, e));
         return item;
     }
 
-    // ── Loaders ───────────────────────────────────────────────────────────
-    async function loadFrom4chan(board, searchTerm) {
-        try {
-            setStatus('Loading from 4chan…');
-            const data = await fetchWithFallback(`https://a.4cdn.org/${board}/catalog.json`);
-            let threads = [];
-            data.forEach(page => threads = threads.concat(page.threads));
-            if (searchTerm) {
-                const terms = searchTerm.toLowerCase().split(' ');
-                threads = threads.filter(t => {
-                    const txt = ((t.sub || '') + ' ' + (t.com || '')).toLowerCase();
-                    return terms.every(term => txt.includes(term));
+    // ── WebM on Safari/iOS ──
+    if (e === '.webm' && isSafari) {
+        const img = document.createElement('img');
+        img.src = thumbUrl; img.loading = 'lazy';
+        img.onerror = () => { img.src = 'https://placehold.co/200x200/1c1c22/555?text=No+Thumb'; };
+        item.appendChild(img);
+        item.appendChild(badge);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'convert-btn';
+        overlay.innerHTML = '<span class="icon">▶</span><span>Tap to Convert</span><span class="label">WebM → MP4</span>';
+        item.appendChild(overlay);
+
+        let converting = false;
+        overlay.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            if (converting) return;
+            converting = true;
+            overlay.innerHTML = '<span class="icon">⚙️</span><span>Converting…</span>';
+            const pw = document.createElement('div');
+            pw.className = 'progress-wrap';
+            const lbl = document.createElement('div');
+            lbl.textContent = 'Starting…';
+            const bar = document.createElement('div');
+            bar.className = 'progress-fill'; bar.style.width = '0%';
+            pw.appendChild(lbl); pw.appendChild(bar);
+            item.appendChild(pw);
+            try {
+                const mp4Url = await convertWebmToMp4(fullUrl, pct => {
+                    lbl.textContent = `${pct}%`; bar.style.width = pct + '%';
                 });
+                item.innerHTML = '';
+                const v = document.createElement('video');
+                v.src = mp4Url; v.controls = true; v.loop = true; v.muted = true;
+                v.playsInline = true; v.autoplay = true; v.style.width = '100%'; v.style.height = '100%'; v.style.objectFit = 'cover';
+                item.appendChild(v);
+                v.play().catch(() => {});
+            } catch (err) {
+                if (item.contains(overlay)) item.removeChild(overlay);
+                if (item.contains(pw)) item.removeChild(pw);
+                const p = document.createElement('p');
+                p.textContent = '⚠ ' + err.message;
+                p.style.cssText = 'color:#f55;padding:8px;font-size:10px;text-align:center';
+                item.appendChild(p);
             }
-            let count = 0;
-            threads.forEach(t => {
-                if (t.tim) {
-                    gallery.appendChild(createGalleryItem(
-                        `https://t.4cdn.org/${board}/${t.tim}s.jpg`,
-                        `https://i.4cdn.org/${board}/${t.tim}${t.ext}`,
-                        t.ext
-                    ));
-                    count++;
-                }
-            });
-            setStatus(`4chan: ${count} items.`);
-        } catch (e) { showError('4chan error: ' + e.message); }
+        });
+        return item;
     }
 
-    async function loadFromDanbooru(searchTerm) {
-        let tags = 'rating:general';
-        if (searchTerm) tags += '+' + searchTerm.trim().replace(/ /g, '+');
+    // ── Video (mp4, webm on non-Safari) ──
+    if (e === '.webm' || e === '.mp4') {
+        const v = document.createElement('video');
+        v.src = fullUrl; v.muted = true; v.loop = true; v.playsInline = true;
+        v.preload = 'metadata';
+        v.style.width = '100%'; v.style.height = '100%'; v.style.objectFit = 'cover';
+        v.onerror = () => {
+            const img = document.createElement('img');
+            img.src = thumbUrl; img.style.width = '100%'; img.style.height = '100%'; img.style.objectFit = 'cover';
+            item.replaceChild(img, v);
+        };
+        item.appendChild(v);
+        item.appendChild(badge);
+        item.appendChild(info);
+        item.addEventListener('mouseenter', () => v.play().catch(() => {}));
+        item.addEventListener('mouseleave', () => { v.pause(); v.currentTime = 0; });
+        item.addEventListener('click', () => openLightbox(fullUrl, e));
+        return item;
+    }
+
+    // ── Static image ──
+    const img = document.createElement('img');
+    img.src = thumbUrl; img.loading = 'lazy';
+    img.onerror = () => { img.src = 'https://placehold.co/200x200/1c1c22/555?text=Error'; };
+    item.appendChild(img);
+    item.appendChild(badge);
+    item.appendChild(info);
+    item.addEventListener('click', () => openLightbox(fullUrl, e));
+    return item;
+}
+
+// ── 4chan: Load ALL media from threads ─────────────────────────────
+async function loadFrom4chan(board, searchTerm, signal) {
+    const limit = parseInt(threadLimitSelect.value);
+    setStatus('Fetching 4chan catalog…');
+
+    let data;
+    try {
+        data = await fetchJSON(`https://a.4cdn.org/${board}/catalog.json`, signal);
+    } catch (e) {
+        if (e.name === 'AbortError') return;
+        setStatus(`<span class="error-text">4chan catalog failed: ${e.message}</span>`);
+        return;
+    }
+
+    // Flatten all threads from catalog
+    let threads = [];
+    data.forEach(page => threads = threads.concat(page.threads));
+
+    // Filter by search
+    if (searchTerm) {
+        const terms = searchTerm.toLowerCase().split(/\s+/);
+        threads = threads.filter(t => {
+            const txt = ((t.sub || '') + ' ' + (t.com || '') + ' ' + (t.filename || '')).toLowerCase();
+            return terms.every(term => txt.includes(term));
+        });
+    }
+
+    // Sort by reply count (most active first) and limit
+    threads.sort((a, b) => (b.replies || 0) - (a.replies || 0));
+    threads = threads.slice(0, limit);
+
+    if (threads.length === 0) {
+        setStatus(`<span class="warn-text">No matching threads on /${board}/</span>`);
+        return;
+    }
+
+    setStatus(`Found ${threads.length} threads — fetching all posts…`);
+    setProgress(0);
+
+    let threadsDone = 0;
+    let errorCount = 0;
+
+    // Fetch each thread to get ALL posts (not just OPs)
+    for (const thread of threads) {
+        if (signal.aborted) return;
+
         try {
-            setStatus('Loading from Danbooru…');
-            const data = await fetchWithFallback(`https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`);
-            let count = 0;
-            data.forEach(p => {
-                const thumb = p.preview_file_url || p.large_file_url || p.file_url;
-                const full  = p.file_url || p.large_file_url;
-                if (!thumb || !full) return;
-                gallery.appendChild(createGalleryItem(thumb, full, '.' + (p.file_ext || 'jpg').toLowerCase()));
-                count++;
-            });
-            setStatus(`Danbooru: ${count} items.`);
-        } catch (e) { showError('Danbooru error: ' + e.message); }
+            const threadData = await fetchJSON(
+                `https://a.4cdn.org/${board}/thread/${thread.no}.json`, signal
+            );
+
+            const posts = threadData.posts || [];
+
+            for (const post of posts) {
+                if (!post.tim || !post.ext) continue; // skip text-only posts
+
+                const thumbUrl = `https://t.4cdn.org/${board}/${post.tim}s.jpg`;
+                const fullUrl = `https://i.4cdn.org/${board}/${post.tim}${post.ext}`;
+
+                gallery.appendChild(createGalleryItem(thumbUrl, fullUrl, post.ext, post.fsize));
+                totalMediaCount++;
+            }
+        } catch (e) {
+            if (e.name === 'AbortError') return;
+            errorCount++;
+            console.warn(`Thread ${thread.no} failed:`, e.message);
+        }
+
+        threadsDone++;
+        const pct = (threadsDone / threads.length) * 100;
+        setProgress(pct);
+        setStatus(`4chan: <span class="count">${totalMediaCount}</span> media loaded — thread ${threadsDone}/${threads.length}` +
+            (errorCount ? ` <span class="warn-text">(${errorCount} errors)</span>` : ''));
+
+        // Small delay between thread fetches to avoid rate-limiting
+        if (threadsDone < threads.length) {
+            await new Promise(r => setTimeout(r, 300));
+        }
     }
 
-    function loadContent() {
-        errorDiv.textContent = '';
-        gallery.innerHTML = '';
-        statusDiv.textContent = '';
-        loadFrom4chan(boardSelect.value, searchInput.value.trim());
-        loadFromDanbooru(searchInput.value.trim());
+    setProgress(-1);
+}
+
+// ── Danbooru ──────────────────────────────────────────────────────
+async function loadFromDanbooru(searchTerm, signal) {
+    let tags = 'rating:general';
+    if (searchTerm) tags += '+' + searchTerm.trim().replace(/ /g, '+');
+
+    setStatus(statusBar.innerHTML + ' | Danbooru…');
+
+    try {
+        const data = await fetchJSON(
+            `https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`, signal
+        );
+        let count = 0;
+        data.forEach(p => {
+            const thumb = p.preview_file_url || p.large_file_url || p.file_url;
+            const full = p.file_url || p.large_file_url;
+            if (!thumb || !full) return;
+            gallery.appendChild(createGalleryItem(thumb, full, '.' + (p.file_ext || 'jpg').toLowerCase(), p.file_size));
+            count++;
+            totalMediaCount++;
+        });
+        setStatus(`<span class="count">${totalMediaCount}</span> total media (Danbooru: ${count})`);
+    } catch (e) {
+        if (e.name === 'AbortError') return;
+        setStatus(statusBar.innerHTML + ` | <span class="error-text">Danbooru: ${e.message}</span>`);
+    }
+}
+
+// ── Main load ─────────────────────────────────────────────────────
+async function startLoad() {
+    if (abortController) abortController.abort();
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
+    gallery.innerHTML = '';
+    totalMediaCount = 0;
+    emptyState.style.display = 'none';
+    setStatus('');
+    setProgress(-1);
+
+    loadBtn.style.display = 'none';
+    stopBtn.style.display = 'inline-block';
+
+    const board = boardSelect.value;
+    const search = searchInput.value.trim();
+
+    try {
+        await loadFrom4chan(board, search, signal);
+        if (!signal.aborted) await loadFromDanbooru(search, signal);
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            setStatus(`<span class="error-text">${e.message}</span>`);
+        }
     }
 
-    loadContent();
+    loadBtn.style.display = 'inline-block';
+    stopBtn.style.display = 'none';
+    setProgress(-1);
+
+    if (totalMediaCount === 0) emptyState.style.display = 'block';
+}
+
+function stopLoad() {
+    if (abortController) abortController.abort();
+    loadBtn.style.display = 'inline-block';
+    stopBtn.style.display = 'none';
+    setProgress(-1);
+    setStatus(statusBar.innerHTML + ' <span class="warn-text">— Stopped</span>');
+}
+
+// Enter key triggers load
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') startLoad(); });
+
+// Auto-load on start
+startLoad();
 </script>
 ```
 
