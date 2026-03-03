@@ -6,7 +6,7 @@
     <title>NSFW Gallery</title>
     <style>
         body {
-            background-color: #f0f0f0;
+ background-color: #f0f0f0;
             font-family: Arial, sans-serif;
         }
         #controls {
@@ -70,14 +70,14 @@
         const errorDiv = document.getElementById('error');
         const searchInput = document.getElementById('search');
         const boardSelect = document.getElementById('board');
-        const proxyBase = 'https://test.cors.workers.dev/?';
+        const proxy = 'https://proxy.cors.sh/';
 
         function showError(message) {
             errorDiv.textContent += message + '\n';
         }
 
         async function fetchViaProxy(url) {
-            const proxyUrl = proxyBase + url;
+            const proxyUrl = proxy + url;
             try {
                 const response = await fetch(proxyUrl);
                 if (!response.ok) throw new Error('Proxy response was not ok: ' + response.status);
@@ -88,7 +88,7 @@
         }
 
         function getProxiedUrl(url) {
-            return proxyBase + url;
+            return proxy + url;
         }
 
         async function loadFrom4chan(board, searchTerm) {
