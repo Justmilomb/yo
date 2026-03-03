@@ -375,13 +375,27 @@ const PROXIES = [
 
 // Proxy specifically for media/video blobs - returns an object URL
 async function proxyMediaUrl(url, signal) {
+    // Guess MIME from URL extension
+    const mimeMap = {
+        '.mp4': 'video/mp4', '.webm': 'video/webm',
+        '.gif': 'image/gif', '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg', '.png': 'image/png',
+    };
+    const ext = (url.match(/\.\w+(?:\?|$)/)?.[0] || '').replace('?','').toLowerCase();
+    const fallbackMime = mimeMap[ext] || 'application/octet-stream';
+
     let lastErr;
     for (const mkProxy of PROXIES) {
         try {
             const res = await fetch(mkProxy(url), { signal });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const blob = await res.blob();
-            return URL.createObjectURL(blob);
+            const buf = await res.arrayBuffer();
+            // Use response content-type if valid, otherwise use our guess
+            let mime = res.headers.get('content-type') || '';
+            if (!mime || mime.includes('octet-stream') || mime.includes('text/')) {
+                mime = fallbackMime;
+            }
+            return URL.createObjectURL(new Blob([buf], { type: mime }));
         } catch (e) {
             if (e.name === 'AbortError') throw e;
             lastErr = e;
@@ -432,14 +446,40 @@ function setProgress(pct) {
 function openLightbox(fullUrl, ext) {
     lightboxContent.innerHTML = '';
     const e = ext.toLowerCase();
+
     if (e === '.webm' || e === '.mp4') {
         const loading = document.createElement('div');
-        loading.textContent = 'Loading video…';
-        loading.style.cssText = 'color:white;font-family:JetBrains Mono,monospace;font-size:13px;';
+        loading.style.cssText = 'color:white;font-family:JetBrains Mono,monospace;font-size:13px;text-align:center;';
         lightboxContent.appendChild(loading);
         lightbox.classList.add('active');
         document.body.style.overflow = 'hidden';
 
+        // Safari can't play WebM at all — must convert
+        if (e === '.webm' && isSafari) {
+            loading.textContent = 'Converting WebM → MP4…';
+            convertWebmToMp4(fullUrl, pct => {
+                loading.textContent = pct <= 10 ? 'Downloading…' : `Converting ${pct}%…`;
+            }).then(mp4Url => {
+                lightboxContent.innerHTML = '';
+                const v = document.createElement('video');
+                v.src = mp4Url; v.controls = true; v.autoplay = true;
+                v.loop = true; v.playsInline = true;
+                v.style.maxWidth = '95vw'; v.style.maxHeight = '95vh';
+                v.onclick = (ev) => ev.stopPropagation();
+                lightboxContent.appendChild(v);
+                v.play().catch(() => {});
+            }).catch(err => {
+                lightboxContent.innerHTML = '';
+                const p = document.createElement('p');
+                p.textContent = '⚠ Convert failed: ' + err.message;
+                p.style.cssText = 'color:#f55;font-size:13px;';
+                lightboxContent.appendChild(p);
+            });
+            return;
+        }
+
+        // Non-Safari: proxy and play directly
+        loading.textContent = 'Loading video…';
         proxyMediaUrl(fullUrl).then(blobUrl => {
             lightboxContent.innerHTML = '';
             const v = document.createElement('video');
@@ -458,6 +498,7 @@ function openLightbox(fullUrl, ext) {
         });
         return;
     }
+
     const img = document.createElement('img');
     img.src = fullUrl;
     lightboxContent.appendChild(img);
@@ -473,21 +514,58 @@ function closeLightbox(e) {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox({ target: lightbox }); });
 
-// ── WebM → MP4 ────────────────────────────────────────────────────
+// ── WebM → MP4 conversion (Safari only) ─────────────────────────
+let convertQueue = Promise.resolve();
+
 async function convertWebmToMp4(webmUrl, onProgress) {
     const ff = await ensureFFmpeg();
     if (!ff) throw new Error('FFmpeg not available');
-    const handler = ({ progress }) => onProgress && onProgress(Math.round(Math.min(progress, 1) * 100));
-    ff.on('progress', handler);
-    try {
-        const data = await fetchBinary(webmUrl);
-        await ff.writeFile('in.webm', data);
-        await ff.exec(['-i', 'in.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart', 'out.mp4']);
-        const mp4 = await ff.readFile('out.mp4');
-        await ff.deleteFile('in.webm');
-        await ff.deleteFile('out.mp4');
-        return URL.createObjectURL(new Blob([mp4.buffer], { type: 'video/mp4' }));
-    } finally { ff.off('progress', handler); }
+
+    // Queue conversions so only one runs at a time (FFmpeg is single-threaded)
+    return new Promise((resolve, reject) => {
+        convertQueue = convertQueue.then(async () => {
+            const handler = ({ progress }) => onProgress && onProgress(Math.round(Math.min(progress, 1) * 100));
+            ff.on('progress', handler);
+            try {
+                onProgress && onProgress(0);
+                const data = await fetchBinary(webmUrl);
+                onProgress && onProgress(10);
+                const fname = 'in_' + Date.now() + '.webm';
+                const oname = 'out_' + Date.now() + '.mp4';
+                await ff.writeFile(fname, data);
+
+                // Try fast copy first (just repackage, no re-encode)
+                try {
+                    await ff.exec([
+                        '-i', fname,
+                        '-c:v', 'copy', '-c:a', 'aac',
+                        '-movflags', '+faststart',
+                        '-y', oname
+                    ]);
+                } catch {
+                    // If copy fails, fall back to re-encode (slower but always works)
+                    await ff.exec([
+                        '-i', fname,
+                        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+                        '-c:a', 'aac', '-b:a', '96k',
+                        '-movflags', '+faststart',
+                        '-vf', 'scale=trunc(iw/4)*2:trunc(ih/4)*2',
+                        '-y', oname
+                    ]);
+                }
+
+                const mp4 = await ff.readFile(oname);
+                await ff.deleteFile(fname).catch(() => {});
+                await ff.deleteFile(oname).catch(() => {});
+                const url = URL.createObjectURL(new Blob([mp4.buffer], { type: 'video/mp4' }));
+                resolve(url);
+            } catch (e) {
+                reject(e);
+            } finally {
+                ff.off('progress', handler);
+            }
+        });
+    });
 }
 
 // ── Format file size ──────────────────────────────────────────────
@@ -526,7 +604,7 @@ function createGalleryItem(thumbUrl, fullUrl, ext, filesize) {
         return item;
     }
 
-    // ── WebM on Safari/iOS — can't play WebM at all, offer download link ──
+    // ── WebM on Safari/iOS — must convert to MP4 to play ──
     if (e === '.webm' && isSafari) {
         const img = document.createElement('img');
         img.src = thumbUrl; img.loading = 'lazy';
@@ -536,13 +614,65 @@ function createGalleryItem(thumbUrl, fullUrl, ext, filesize) {
 
         const overlay = document.createElement('div');
         overlay.className = 'convert-btn';
-        overlay.innerHTML = '<span class="icon">⬇</span><span>WebM (tap to open)</span><span class="label">Opens in new tab</span>';
+        overlay.innerHTML = '<span class="icon">▶</span><span>Tap to Play</span><span class="label">WebM → MP4 auto-convert</span>';
         item.appendChild(overlay);
 
-        overlay.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            window.open(fullUrl, '_blank');
-        });
+        let converting = false;
+        let convertedUrl = null;
+
+        async function doConvert() {
+            if (convertedUrl) {
+                // Already converted, just play
+                item.innerHTML = '';
+                const v = document.createElement('video');
+                v.src = convertedUrl; v.controls = true; v.loop = true; v.muted = true;
+                v.playsInline = true; v.autoplay = true;
+                v.setAttribute('playsinline', '');
+                v.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                item.appendChild(v);
+                item.appendChild(badge);
+                v.play().catch(() => {});
+                return;
+            }
+            if (converting) return;
+            converting = true;
+            overlay.innerHTML = '<span class="icon">⏳</span><span>Downloading…</span>';
+
+            const pw = document.createElement('div');
+            pw.className = 'progress-wrap';
+            const lbl = document.createElement('div');
+            lbl.textContent = 'Downloading…';
+            const bar = document.createElement('div');
+            bar.className = 'progress-fill'; bar.style.width = '0%';
+            pw.appendChild(lbl); pw.appendChild(bar);
+            item.appendChild(pw);
+
+            try {
+                convertedUrl = await convertWebmToMp4(fullUrl, pct => {
+                    if (pct <= 10) {
+                        lbl.textContent = 'Downloading…';
+                    } else {
+                        lbl.textContent = `Converting ${pct}%`;
+                    }
+                    bar.style.width = pct + '%';
+                });
+                item.innerHTML = '';
+                const v = document.createElement('video');
+                v.src = convertedUrl; v.controls = true; v.loop = true; v.muted = true;
+                v.playsInline = true; v.autoplay = true;
+                v.setAttribute('playsinline', '');
+                v.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                item.appendChild(v);
+                item.appendChild(badge);
+                v.play().catch(() => {});
+            } catch (err) {
+                converting = false;
+                overlay.innerHTML = '<span class="icon">⚠️</span><span>Failed — tap to retry</span><span class="label">' + err.message + '</span>';
+                if (item.contains(pw)) item.removeChild(pw);
+            }
+        }
+
+        overlay.addEventListener('click', (ev) => { ev.stopPropagation(); doConvert(); });
         return item;
     }
 
