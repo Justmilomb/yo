@@ -70,38 +70,31 @@
         const errorDiv = document.getElementById('error');
         const searchInput = document.getElementById('search');
         const boardSelect = document.getElementById('board');
-        const proxyBase = 'https://api.allorigins.win';
+        const proxyBase = 'https://test.cors.workers.dev/?';
 
         function showError(message) {
             errorDiv.textContent += message + '\n';
         }
 
-        async function fetchViaProxy(url, raw = false) {
-            const proxyPath = raw ? '/raw?url=' : '/get?url=';
-            const proxyUrl = proxyBase + proxyPath + encodeURIComponent(url);
+        async function fetchViaProxy(url) {
+            const proxyUrl = proxyBase + url;
             try {
                 const response = await fetch(proxyUrl);
                 if (!response.ok) throw new Error('Proxy response was not ok: ' + response.status);
-                if (raw) {
-                    return response;
-                } else {
-                    const data = await response.json();
-                    return JSON.parse(data.contents);
-                }
+                return await response.json();
             } catch (error) {
                 throw error;
             }
         }
 
         function getProxiedUrl(url) {
-            return proxyBase + '/raw?url=' + encodeURIComponent(url);
+            return proxyBase + url;
         }
 
         async function loadFrom4chan(board, searchTerm) {
             try {
                 const url = `https://a.4cdn.org/${board}/catalog.json`;
                 const data = await fetchViaProxy(url);
-                gallery.innerHTML = ''; // Clear previous
 
                 let threads = [];
                 data.forEach(page => {
@@ -164,7 +157,6 @@
             link.href = full;
             const img = document.createElement('img');
             img.src = thumb;
-            img.crossOrigin = 'anonymous';
             img.onerror = () => { img.src = 'https://via.placeholder.com/200?text=Error'; };
             link.appendChild(img);
 
@@ -174,7 +166,6 @@
                 if (ext.includes('webm') || ext.includes('mp4') || ext.includes('gif')) {
                     media = document.createElement('video');
                     media.src = full;
-                    media.crossOrigin = 'anonymous';
                     media.controls = true;
                     media.autoplay = true;
                     media.loop = true;
@@ -182,7 +173,6 @@
                 } else {
                     media = document.createElement('img');
                     media.src = full;
-                    media.crossOrigin = 'anonymous';
                     media.onerror = () => { console.error('Error loading image'); };
                 }
                 item.replaceChild(media, link);
