@@ -186,43 +186,93 @@
         }
     }
 
+    // iPhone Safari does not support webm — detect it
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
     function createGalleryItem(thumb, full, ext) {
         const item = document.createElement('div');
         item.className = 'item';
 
-        const link = document.createElement('a');
-        link.href = full;
+        const extLower = ext.toLowerCase();
+        const isVideo = extLower.includes('webm') || extLower.includes('mp4');
+        const isGif  = extLower.includes('gif');
 
-        const img = document.createElement('img');
-        img.src = thumb;
-        img.loading = 'lazy';
-        img.onerror = () => {
-            img.src = 'https://placehold.co/200x200?text=No+Preview';
-        };
-        link.appendChild(img);
+        // Safari/iPhone cannot play .webm — show a link to open externally instead
+        const isWebm = extLower.includes('webm');
+        if (isWebm && isSafari) {
+            // Show thumbnail with an external-link overlay
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            const img = document.createElement('img');
+            img.src = thumb;
+            img.loading = 'lazy';
+            img.style.width = '100%';
+            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
+            const badge = document.createElement('a');
+            badge.href = full;
+            badge.target = '_blank';
+            badge.textContent = '▶ Open WebM';
+            badge.style.cssText = 'position:absolute;bottom:4px;left:0;right:0;text-align:center;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;padding:4px;text-decoration:none;';
+            wrapper.appendChild(img);
+            wrapper.appendChild(badge);
+            item.appendChild(wrapper);
+            return item;
+        }
 
-        link.onclick = (e) => {
-            e.preventDefault();
-            let media;
-            const extLower = ext.toLowerCase();
-            if (extLower.includes('webm') || extLower.includes('mp4') || extLower.includes('gif')) {
-                media = document.createElement('video');
-                media.src = full;
-                media.controls = true;
-                media.autoplay = true;
-                media.loop = true;
-                media.style.width = '100%';
-                media.onerror = () => console.error('Error loading video:', full);
-            } else {
-                media = document.createElement('img');
-                media.src = full;
-                media.style.width = '100%';
-                media.onerror = () => console.error('Error loading image:', full);
-            }
-            item.replaceChild(media, link);
-        };
+        if (isVideo) {
+            // Render video directly — required for iPhone autoplay
+            const video = document.createElement('video');
+            video.src = full;
+            video.controls = true;
+            video.autoplay = false;   // don't autoplay all at once — too heavy
+            video.loop = true;
+            video.muted = true;        // required for any autoplay on iOS
+            video.playsInline = true;  // critical: prevents iOS fullscreen takeover
+            video.preload = 'none';    // save bandwidth until tapped
+            video.style.width = '100%';
+            video.setAttribute('playsinline', '');       // belt-and-suspenders for older iOS
+            video.setAttribute('webkit-playsinline', '');
+            video.onerror = () => {
+                video.replaceWith(Object.assign(document.createElement('p'), {
+                    textContent: '⚠ Video failed to load',
+                    style: 'text-align:center;color:red;padding:8px;'
+                }));
+            };
+            // Tap to play/pause
+            video.addEventListener('click', () => {
+                video.paused ? video.play() : video.pause();
+            });
+            item.appendChild(video);
 
-        item.appendChild(link);
+        } else if (isGif) {
+            // Animated GIFs work fine as <img> on iOS
+            const img = document.createElement('img');
+            img.src = full;
+            img.loading = 'lazy';
+            img.style.width = '100%';
+            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
+            item.appendChild(img);
+
+        } else {
+            // Static image — show thumbnail, tap to swap in full res
+            const link = document.createElement('a');
+            link.href = full;
+            const img = document.createElement('img');
+            img.src = thumb;
+            img.loading = 'lazy';
+            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
+            link.appendChild(img);
+            link.onclick = (e) => {
+                e.preventDefault();
+                const full_img = document.createElement('img');
+                full_img.src = full;
+                full_img.style.width = '100%';
+                full_img.onerror = () => { full_img.src = 'https://placehold.co/200x200?text=Load+Error'; };
+                item.replaceChild(full_img, link);
+            };
+            item.appendChild(link);
+        }
+
         return item;
     }
 
