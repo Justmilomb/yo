@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSFW Gallery</title>
+    <style>
+        body {
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            padding: 20px;
+        }
+        .item {
+            border: 1px solid #ddd;
+            background-color: white;
+            overflow: hidden;
+        }
+        .item img, .item video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .item a {
+            display: block;
+        }
+        #error {
+            color: red;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>NSFW Gallery from 4chan, Danbooru, and Gelbooru</h1>
+    <p>Click on thumbnails to load full image or play video.</p>
+    <div id="error"></div>
+    <div id="gallery"></div>
+
+    <script>
+        const gallery = document.getElementById('gallery');
+        const errorDiv = document.getElementById('error');
+
+        function showError(message) {
+            errorDiv.textContent += message + '\n';
+        }
+
+        async function loadFrom4chan() {
+            const board = 'gif'; // NSFW board with videos and gifs
+            try {
+                const response = await fetch(`https://a.4cdn.org/${board}/catalog.json`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                // Limit to first page for fewer items
+                data[0].threads.forEach(thread => {
+                    if (thread.tim) {
+                        const tim = thread.tim;
+                        const ext = thread.ext;
+                        const thumb = `https://t.4cdn.org/${board}/${tim}s.jpg`;
+                        const full = `https://i.4cdn.org/${board}/${tim}${ext}`;
+
+                        const item = document.createElement('div');
+                        item.className = 'item';
+
+                        const link = document.createElement('a');
+                        link.href = full;
+                        const img = document.createElement('img');
+                        img.src = thumb;
+                        img.onerror = () => { img.src = 'placeholder.jpg'; }; // Optional placeholder
+                        link.appendChild(img);
+
+                        link.onclick = (e) => {
+                            e.preventDefault();
+                            let media;
+                            if (ext === '.webm' || ext === '.mp4') {
+                                media = document.createElement('video');
+                                media.src = full;
+                                media.controls = true;
+                                media.autoplay = true;
+                                media.loop = true;
+                                media.onerror = () => { console.error('Error loading video'); };
+                            } else {
+                                media = document.createElement('img');
+                                media.src = full;
+                                media.onerror = () => { console.error('Error loading image'); };
+                            }
+                            item.replaceChild(media, link);
+                        };
+
+                        item.appendChild(link);
+                        gallery.appendChild(item);
+                    }
+                });
+            } catch (error) {
+                showError('Error loading from 4chan: ' + error.message);
+            }
+        }
+
+        async function loadFromDanbooru() {
+            try {
+                const response = await fetch('https://danbooru.donmai.us/posts.json?tags=rating:explicit&limit=50');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                data.forEach(p => {
+                    if (p.file_url && p.preview_file_url) {
+                        const full = p.file_url;
+                        const thumb = p.preview_file_url;
+                        const ext = p.file_ext.toLowerCase();
+
+                        const item = document.createElement('div');
+                        item.className = 'item';
+
+                        const link = document.createElement('a');
+                        link.href = full;
+                        const img = document.createElement('img');
+                        img.src = thumb;
+                        img.onerror = () => { img.src = 'placeholder.jpg'; };
+                        link.appendChild(img);
+
+                        link.onclick = (e) => {
+                            e.preventDefault();
+                            let media;
+                            if (ext === 'webm' || ext === 'mp4' || ext === 'gif' || ext === 'mp4') {
+                                media = document.createElement('video');
+                                media.src = full;
+                                media.controls = true;
+                                media.autoplay = true;
+                                media.loop = true;
+                                media.onerror = () => { console.error('Error loading video'); };
+                            } else {
+                                media = document.createElement('img');
+                                media.src = full;
+                                media.onerror = () => { console.error('Error loading image'); };
+                            }
+                            item.replaceChild(media, link);
+                        };
+
+                        item.appendChild(link);
+                        gallery.appendChild(item);
+                    }
+                });
+            } catch (error) {
+                showError('Error loading from Danbooru: ' + error.message);
+            }
+        }
+
+        async function loadFromGelbooru() {
+            try {
+                const response = await fetch('https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags=rating:explicit');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                data.post.forEach(p => {
+                    if (p.file_url && p.preview_url) {
+                        const full = p.file_url;
+                        const thumb = p.preview_url;
+                        const ext = full.split('.').pop().toLowerCase();
+
+                        const item = document.createElement('div');
+                        item.className = 'item';
+
+                        const link = document.createElement('a');
+                        link.href = full;
+                        const img = document.createElement('img');
+                        img.src = thumb;
+                        img.onerror = () => { img.src = 'placeholder.jpg'; };
+                        link.appendChild(img);
+
+                        link.onclick = (e) => {
+                            e.preventDefault();
+                            let media;
+                            if (ext === 'webm' || ext === 'mp4' || ext === 'gif') {
+                                media = document.createElement('video');
+                                media.src = full;
+                                media.controls = true;
+                                media.autoplay = true;
+                                media.loop = true;
+                                media.onerror = () => { console.error('Error loading video'); };
+                            } else {
+                                media = document.createElement('img');
+                                media.src = full;
+                                media.onerror = () => { console.error('Error loading image'); };
+                            }
+                            item.replaceChild(media, link);
+                        };
+
+                        item.appendChild(link);
+                        gallery.appendChild(item);
+                    }
+                });
+            } catch (error) {
+                showError('Error loading from Gelbooru: ' + error.message);
+            }
+        }
+
+        // Load content from all sources
+        loadFrom4chan();
+        loadFromDanbooru();
+        loadFromGelbooru();
+    </script>
+</body>
+</html>
