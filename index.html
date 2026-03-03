@@ -1,12 +1,13 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NSFW Gallery</title>
+    <title>Media Gallery</title>
     <style>
         body {
- background-color: #f0f0f0;
+            background-color: #f0f0f0;
             font-family: Arial, sans-serif;
         }
         #controls {
@@ -41,158 +42,204 @@
         }
         #error {
             color: red;
-            padding: 20px;
+            padding: 10px 20px;
+            white-space: pre-line;
+        }
+        #status {
+            color: #555;
+            padding: 5px 20px;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
-    <h1>NSFW Gallery from 4chan and Danbooru</h1>
+    <h1>Media Gallery from 4chan and Danbooru</h1>
     <p>Enter tags to search (space-separated for multiple), click thumbnails to load full image or play video.</p>
     <div id="controls">
         <label for="search">Search Tags:</label>
         <input id="search" type="text" placeholder="e.g., anime girl">
+        &nbsp;
         <label for="board">4chan Board:</label>
         <select id="board">
-            <option value="gif">/gif/ - Adult GIF</option>
-            <option value="hc">/hc/ - Hardcore</option>
-            <option value="s">/s/ - Beautiful Women</option>
-            <option value="hm">/hm/ - Handsome Men</option>
-            <option value="hr">/hr/ - High Resolution</option>
-            <option value="y">/y/ - Yaoi</option>
+            <option value="gif">Animated Images</option>
+            <option value="hc">Images</option>
+            <option value="s">Photos</option>
+            <option value="hm">Portraits</option>
+            <option value="hr">High Resolution</option>
+            <option value="y">Art</option>
         </select>
+        &nbsp;
         <button onclick="loadContent()">Load</button>
     </div>
+    <div id="status"></div>
     <div id="error"></div>
     <div id="gallery"></div>
 
-    <script>
-        const gallery = document.getElementById('gallery');
-        const errorDiv = document.getElementById('error');
-        const searchInput = document.getElementById('search');
-        const boardSelect = document.getElementById('board');
-        const proxy = 'https://proxy.cors.sh/';
+```
+<script>
+    const gallery = document.getElementById('gallery');
+    const errorDiv = document.getElementById('error');
+    const statusDiv = document.getElementById('status');
+    const searchInput = document.getElementById('search');
+    const boardSelect = document.getElementById('board');
 
-        function showError(message) {
-            errorDiv.textContent += message + '\n';
-        }
+    // Multiple proxy fallbacks to try in order
+    const PROXIES = [
+        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    ];
 
-        async function fetchViaProxy(url) {
-            const proxyUrl = proxy + url;
+    function showError(message) {
+        errorDiv.textContent += message + '\n';
+    }
+
+    function setStatus(message) {
+        statusDiv.textContent = message;
+    }
+
+    async function fetchWithFallback(url) {
+        let lastError;
+        for (const makeProxy of PROXIES) {
+            const proxyUrl = makeProxy(url);
             try {
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error('Proxy response was not ok: ' + response.status);
-                return await response.json();
-            } catch (error) {
-                throw error;
+                const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const text = await response.text();
+                return JSON.parse(text);
+            } catch (err) {
+                lastError = err;
+                // Try next proxy
             }
         }
+        throw new Error(lastError?.message || 'All proxies failed');
+    }
 
-        function getProxiedUrl(url) {
-            return proxy + url;
-        }
+    // For media URLs, try direct first (often works for images), then proxied
+    function getMediaUrl(url) {
+        return url; // use direct URL for media; browser will handle it
+    }
 
-        async function loadFrom4chan(board, searchTerm) {
-            try {
-                const url = `https://a.4cdn.org/${board}/catalog.json`;
-                const data = await fetchViaProxy(url);
+    async function loadFrom4chan(board, searchTerm) {
+        try {
+            setStatus('Loading from 4chan…');
+            const url = `https://a.4cdn.org/${board}/catalog.json`;
+            const data = await fetchWithFallback(url);
 
-                let threads = [];
-                data.forEach(page => {
-                    threads = threads.concat(page.threads);
-                });
+            let threads = [];
+            data.forEach(page => {
+                threads = threads.concat(page.threads);
+            });
 
-                if (searchTerm) {
-                    const terms = searchTerm.toLowerCase().split(' ');
-                    threads = threads.filter(thread => {
-                        const text = ((thread.sub || '') + ' ' + (thread.com || '')).toLowerCase();
-                        return terms.every(term => text.includes(term));
-                    });
-                }
-
-                threads.forEach(thread => {
-                    if (thread.tim) {
-                        const tim = thread.tim;
-                        const ext = thread.ext;
-                        const thumb = `https://t.4cdn.org/${board}/${tim}s.jpg`;
-                        const full = `https://i.4cdn.org/${board}/${tim}${ext}`;
-
-                        const item = createGalleryItem(getProxiedUrl(thumb), getProxiedUrl(full), ext);
-                        gallery.appendChild(item);
-                    }
-                });
-            } catch (error) {
-                showError('Error loading from 4chan: ' + error.message);
-            }
-        }
-
-        async function loadFromDanbooru(searchTerm) {
-            let tags = 'rating:explicit';
             if (searchTerm) {
-                tags += '+' + searchTerm.replace(/ /g, '+');
-            }
-            try {
-                const url = `https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`;
-                const data = await fetchViaProxy(url);
-
-                data.forEach(p => {
-                    if (p.file_url && p.preview_file_url) {
-                        const full = p.file_url;
-                        const thumb = p.preview_file_url;
-                        const ext = p.file_ext.toLowerCase();
-
-                        const item = createGalleryItem(getProxiedUrl(thumb), getProxiedUrl(full), '.' + ext);
-                        gallery.appendChild(item);
-                    }
+                const terms = searchTerm.toLowerCase().split(' ');
+                threads = threads.filter(thread => {
+                    const text = ((thread.sub || '') + ' ' + (thread.com || '')).toLowerCase();
+                    return terms.every(term => text.includes(term));
                 });
-            } catch (error) {
-                showError('Error loading from Danbooru: ' + error.message);
             }
-        }
 
-        function createGalleryItem(thumb, full, ext) {
-            const item = document.createElement('div');
-            item.className = 'item';
-
-            const link = document.createElement('a');
-            link.href = full;
-            const img = document.createElement('img');
-            img.src = thumb;
-            img.onerror = () => { img.src = 'https://via.placeholder.com/200?text=Error'; };
-            link.appendChild(img);
-
-            link.onclick = (e) => {
-                e.preventDefault();
-                let media;
-                if (ext.includes('webm') || ext.includes('mp4') || ext.includes('gif')) {
-                    media = document.createElement('video');
-                    media.src = full;
-                    media.controls = true;
-                    media.autoplay = true;
-                    media.loop = true;
-                    media.onerror = () => { console.error('Error loading video'); };
-                } else {
-                    media = document.createElement('img');
-                    media.src = full;
-                    media.onerror = () => { console.error('Error loading image'); };
+            let count = 0;
+            threads.forEach(thread => {
+                if (thread.tim) {
+                    const tim = thread.tim;
+                    const ext = thread.ext;
+                    const thumb = `https://t.4cdn.org/${board}/${tim}s.jpg`;
+                    const full = `https://i.4cdn.org/${board}/${tim}${ext}`;
+                    const item = createGalleryItem(thumb, full, ext);
+                    gallery.appendChild(item);
+                    count++;
                 }
-                item.replaceChild(media, link);
-            };
+            });
 
-            item.appendChild(link);
-            return item;
+            setStatus(`Loaded ${count} items from 4chan.`);
+        } catch (error) {
+            showError('Error loading from 4chan: ' + error.message);
         }
+    }
 
-        function loadContent() {
-            errorDiv.textContent = '';
-            gallery.innerHTML = '';
-            const searchTerm = searchInput.value.trim();
-            const board = boardSelect.value;
-            loadFrom4chan(board, searchTerm);
-            loadFromDanbooru(searchTerm);
+    async function loadFromDanbooru(searchTerm) {
+        let tags = 'rating:general'; // use 'general' to avoid auth requirements
+        if (searchTerm) {
+            tags += '+' + searchTerm.trim().replace(/ /g, '+');
         }
+        try {
+            setStatus('Loading from Danbooru…');
+            const url = `https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`;
+            const data = await fetchWithFallback(url);
 
-        // Initial load
-        loadContent();
-    </script>
+            let count = 0;
+            data.forEach(p => {
+                // preview_file_url may be absent for some posts; fall back to large_file_url
+                const thumb = p.preview_file_url || p.large_file_url || p.file_url;
+                const full = p.file_url || p.large_file_url;
+                if (!thumb || !full) return;
+                const ext = '.' + (p.file_ext || 'jpg').toLowerCase();
+                const item = createGalleryItem(thumb, full, ext);
+                gallery.appendChild(item);
+                count++;
+            });
+
+            setStatus(prev => `Loaded ${count} items from Danbooru.`);
+        } catch (error) {
+            showError('Error loading from Danbooru: ' + error.message);
+        }
+    }
+
+    function createGalleryItem(thumb, full, ext) {
+        const item = document.createElement('div');
+        item.className = 'item';
+
+        const link = document.createElement('a');
+        link.href = full;
+
+        const img = document.createElement('img');
+        img.src = thumb;
+        img.loading = 'lazy';
+        img.onerror = () => {
+            img.src = 'https://placehold.co/200x200?text=No+Preview';
+        };
+        link.appendChild(img);
+
+        link.onclick = (e) => {
+            e.preventDefault();
+            let media;
+            const extLower = ext.toLowerCase();
+            if (extLower.includes('webm') || extLower.includes('mp4') || extLower.includes('gif')) {
+                media = document.createElement('video');
+                media.src = full;
+                media.controls = true;
+                media.autoplay = true;
+                media.loop = true;
+                media.style.width = '100%';
+                media.onerror = () => console.error('Error loading video:', full);
+            } else {
+                media = document.createElement('img');
+                media.src = full;
+                media.style.width = '100%';
+                media.onerror = () => console.error('Error loading image:', full);
+            }
+            item.replaceChild(media, link);
+        };
+
+        item.appendChild(link);
+        return item;
+    }
+
+    function loadContent() {
+        errorDiv.textContent = '';
+        gallery.innerHTML = '';
+        statusDiv.textContent = '';
+        const searchTerm = searchInput.value.trim();
+        const board = boardSelect.value;
+        loadFrom4chan(board, searchTerm);
+        loadFromDanbooru(searchTerm);
+    }
+
+    // Initial load
+    loadContent();
+</script>
+```
+
 </body>
 </html>
