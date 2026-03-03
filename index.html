@@ -6,287 +6,365 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Gallery</title>
     <style>
-        body {
-            background-color: #f0f0f0;
-            font-family: Arial, sans-serif;
-        }
+        * { box-sizing: border-box; }
+        body { background: #f0f0f0; font-family: Arial, sans-serif; margin: 0; }
+        h1 { text-align: center; font-size: 1.2rem; padding: 16px 0 0; }
+        p.subtitle { text-align: center; font-size: 0.85rem; color: #555; margin: 4px 0 0; }
         #controls {
-            padding: 20px;
+            padding: 12px 16px;
             text-align: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
         }
-        #search {
-            width: 300px;
-            padding: 5px;
-        }
-        #board {
-            padding: 5px;
-        }
+        #search { width: 200px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        #board { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        button { padding: 7px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+        button:active { background: #1565c0; }
         #gallery {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 10px;
-            padding: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 8px;
+            padding: 12px;
         }
         .item {
             border: 1px solid #ddd;
-            background-color: white;
+            background: white;
+            border-radius: 4px;
             overflow: hidden;
+            position: relative;
         }
-        .item img, .item video {
-            width: 100%;
-            height: auto;
-            display: block;
+        .item img, .item video { width: 100%; height: auto; display: block; }
+        .item a { display: block; }
+        .convert-btn {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.55);
+            color: white; font-size: 13px; text-align: center;
+            cursor: pointer; padding: 8px;
+            gap: 6px;
         }
-        .item a {
-            display: block;
+        .convert-btn .icon { font-size: 28px; }
+        .convert-btn .label { font-size: 11px; opacity: 0.85; }
+        .progress-wrap {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: rgba(0,0,0,0.6); color: white;
+            font-size: 11px; padding: 6px 8px; text-align: center;
         }
-        #error {
-            color: red;
-            padding: 10px 20px;
-            white-space: pre-line;
+        .progress-bar {
+            height: 4px; background: #4caf50; border-radius: 2px;
+            margin-top: 4px; transition: width 0.2s;
         }
-        #status {
-            color: #555;
-            padding: 5px 20px;
-            font-style: italic;
-        }
+        #status { color: #555; padding: 2px 16px; font-size: 0.85rem; font-style: italic; text-align: center; }
+        #error { color: red; padding: 4px 16px; white-space: pre-line; font-size: 0.85rem; text-align: center; }
+        #ffmpeg-status { text-align: center; font-size: 0.8rem; color: #888; padding: 4px; }
     </style>
 </head>
 <body>
-    <h1>Media Gallery from 4chan and Danbooru</h1>
-    <p>Enter tags to search (space-separated for multiple), click thumbnails to load full image or play video.</p>
+    <h1>Media Gallery — 4chan &amp; Danbooru</h1>
+    <p class="subtitle">Tap thumbnails for full image. WebM videos convert to MP4 on-device for iPhone.</p>
     <div id="controls">
-        <label for="search">Search Tags:</label>
-        <input id="search" type="text" placeholder="e.g., anime girl">
-        &nbsp;
-        <label for="board">4chan Board:</label>
+        <input id="search" type="text" placeholder="Search tags…">
         <select id="board">
-            <option value="gif">Animated Images</option>
-            <option value="hc">Images</option>
-            <option value="s">Photos</option>
-            <option value="hm">Portraits</option>
-            <option value="hr">High Resolution</option>
-            <option value="y">Art</option>
+            <option value="gif">gif (Animated)</option>
+            <option value="hc">hc (Images)</option>
+            <option value="s">s (Photos)</option>
+            <option value="hm">hm (Portraits)</option>
+            <option value="hr">hr (Hi-Res)</option>
+            <option value="y">y (Art)</option>
         </select>
-        &nbsp;
         <button onclick="loadContent()">Load</button>
     </div>
+    <div id="ffmpeg-status">⏳ Loading FFmpeg for WebM support…</div>
     <div id="status"></div>
     <div id="error"></div>
     <div id="gallery"></div>
 
 ```
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
 <script>
-    const gallery = document.getElementById('gallery');
-    const errorDiv = document.getElementById('error');
-    const statusDiv = document.getElementById('status');
-    const searchInput = document.getElementById('search');
-    const boardSelect = document.getElementById('board');
+    const gallery         = document.getElementById('gallery');
+    const errorDiv        = document.getElementById('error');
+    const statusDiv       = document.getElementById('status');
+    const ffmpegStatusDiv = document.getElementById('ffmpeg-status');
+    const searchInput     = document.getElementById('search');
+    const boardSelect     = document.getElementById('board');
 
-    // Multiple proxy fallbacks to try in order
-    const PROXIES = [
-        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    ];
-
-    function showError(message) {
-        errorDiv.textContent += message + '\n';
-    }
-
-    function setStatus(message) {
-        statusDiv.textContent = message;
-    }
-
-    async function fetchWithFallback(url) {
-        let lastError;
-        for (const makeProxy of PROXIES) {
-            const proxyUrl = makeProxy(url);
-            try {
-                const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const text = await response.text();
-                return JSON.parse(text);
-            } catch (err) {
-                lastError = err;
-                // Try next proxy
-            }
-        }
-        throw new Error(lastError?.message || 'All proxies failed');
-    }
-
-    // For media URLs, try direct first (often works for images), then proxied
-    function getMediaUrl(url) {
-        return url; // use direct URL for media; browser will handle it
-    }
-
-    async function loadFrom4chan(board, searchTerm) {
-        try {
-            setStatus('Loading from 4chan…');
-            const url = `https://a.4cdn.org/${board}/catalog.json`;
-            const data = await fetchWithFallback(url);
-
-            let threads = [];
-            data.forEach(page => {
-                threads = threads.concat(page.threads);
-            });
-
-            if (searchTerm) {
-                const terms = searchTerm.toLowerCase().split(' ');
-                threads = threads.filter(thread => {
-                    const text = ((thread.sub || '') + ' ' + (thread.com || '')).toLowerCase();
-                    return terms.every(term => text.includes(term));
-                });
-            }
-
-            let count = 0;
-            threads.forEach(thread => {
-                if (thread.tim) {
-                    const tim = thread.tim;
-                    const ext = thread.ext;
-                    const thumb = `https://t.4cdn.org/${board}/${tim}s.jpg`;
-                    const full = `https://i.4cdn.org/${board}/${tim}${ext}`;
-                    const item = createGalleryItem(thumb, full, ext);
-                    gallery.appendChild(item);
-                    count++;
-                }
-            });
-
-            setStatus(`Loaded ${count} items from 4chan.`);
-        } catch (error) {
-            showError('Error loading from 4chan: ' + error.message);
-        }
-    }
-
-    async function loadFromDanbooru(searchTerm) {
-        let tags = 'rating:general'; // use 'general' to avoid auth requirements
-        if (searchTerm) {
-            tags += '+' + searchTerm.trim().replace(/ /g, '+');
-        }
-        try {
-            setStatus('Loading from Danbooru…');
-            const url = `https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`;
-            const data = await fetchWithFallback(url);
-
-            let count = 0;
-            data.forEach(p => {
-                // preview_file_url may be absent for some posts; fall back to large_file_url
-                const thumb = p.preview_file_url || p.large_file_url || p.file_url;
-                const full = p.file_url || p.large_file_url;
-                if (!thumb || !full) return;
-                const ext = '.' + (p.file_ext || 'jpg').toLowerCase();
-                const item = createGalleryItem(thumb, full, ext);
-                gallery.appendChild(item);
-                count++;
-            });
-
-            setStatus(prev => `Loaded ${count} items from Danbooru.`);
-        } catch (error) {
-            showError('Error loading from Danbooru: ' + error.message);
-        }
-    }
-
-    // iPhone Safari does not support webm — detect it
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
+    // ── FFmpeg ────────────────────────────────────────────────────────────
+    let ffmpegReady   = false;
+    let ffmpegLoading = false;
+    let ffmpegInst    = null;
+
+    async function ensureFFmpeg() {
+        if (ffmpegReady) return ffmpegInst;
+        if (ffmpegLoading) {
+            while (!ffmpegReady) await new Promise(r => setTimeout(r, 200));
+            return ffmpegInst;
+        }
+        ffmpegLoading = true;
+        try {
+            const { FFmpeg } = FFmpegWASM;
+            const { toBlobURL } = FFmpegUtil;
+            ffmpegInst = new FFmpeg();
+            const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+            await ffmpegInst.load({
+                coreURL: await toBlobURL(`${base}/ffmpeg-core.js`,   'text/javascript'),
+                wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+            });
+            ffmpegReady = true;
+            ffmpegStatusDiv.textContent = '✅ FFmpeg ready — WebM videos convert on tap';
+        } catch (e) {
+            ffmpegStatusDiv.textContent = '⚠️ FFmpeg failed to load — WebM may not play on iPhone';
+            console.error('FFmpeg load error:', e);
+        }
+        return ffmpegInst;
+    }
+
+    ensureFFmpeg(); // preload in background
+
+    // ── Proxy helpers ─────────────────────────────────────────────────────
+    const PROXIES = [
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    ];
+
+    function showError(msg) { errorDiv.textContent += msg + '\n'; }
+    function setStatus(msg) { statusDiv.textContent = msg; }
+
+    async function fetchWithFallback(url) {
+        let lastErr;
+        for (const mkProxy of PROXIES) {
+            try {
+                const res = await fetch(mkProxy(url), { signal: AbortSignal.timeout(8000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return JSON.parse(await res.text());
+            } catch (e) { lastErr = e; }
+        }
+        throw new Error(lastErr?.message || 'All proxies failed');
+    }
+
+    async function fetchBinaryWithFallback(url) {
+        let lastErr;
+        for (const mkProxy of PROXIES) {
+            try {
+                const res = await fetch(mkProxy(url), { signal: AbortSignal.timeout(60000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return new Uint8Array(await res.arrayBuffer());
+            } catch (e) { lastErr = e; }
+        }
+        throw new Error(lastErr?.message || 'Could not download file');
+    }
+
+    // ── WebM → MP4 conversion ─────────────────────────────────────────────
+    async function convertWebmToMp4(webmUrl, onProgress) {
+        const ff = await ensureFFmpeg();
+        if (!ff) throw new Error('FFmpeg not available');
+
+        const progressHandler = ({ progress }) => onProgress && onProgress(Math.round(Math.min(progress, 1) * 100));
+        ff.on('progress', progressHandler);
+
+        try {
+            const data = await fetchBinaryWithFallback(webmUrl);
+            await ff.writeFile('in.webm', data);
+            await ff.exec([
+                '-i', 'in.webm',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+                '-c:a', 'aac',
+                '-movflags', '+faststart',
+                'out.mp4'
+            ]);
+            const mp4 = await ff.readFile('out.mp4');
+            await ff.deleteFile('in.webm');
+            await ff.deleteFile('out.mp4');
+            return URL.createObjectURL(new Blob([mp4.buffer], { type: 'video/mp4' }));
+        } finally {
+            ff.off('progress', progressHandler);
+        }
+    }
+
+    // ── makeVideo helper ──────────────────────────────────────────────────
+    function makeVideoElement(src) {
+        const v = document.createElement('video');
+        v.src = src;
+        v.controls = true;
+        v.loop = true;
+        v.muted = true;
+        v.playsInline = true;
+        v.autoplay = true;
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        v.style.width = '100%';
+        return v;
+    }
+
+    // ── Gallery item ──────────────────────────────────────────────────────
     function createGalleryItem(thumb, full, ext) {
         const item = document.createElement('div');
         item.className = 'item';
-
         const extLower = ext.toLowerCase();
-        const isVideo = extLower.includes('webm') || extLower.includes('mp4');
-        const isGif  = extLower.includes('gif');
 
-        // Safari/iPhone cannot play .webm — show a link to open externally instead
-        const isWebm = extLower.includes('webm');
-        if (isWebm && isSafari) {
-            // Show thumbnail with an external-link overlay
-            const wrapper = document.createElement('div');
-            wrapper.style.position = 'relative';
+        // ── GIF ──
+        if (extLower.includes('gif')) {
             const img = document.createElement('img');
-            img.src = thumb;
-            img.loading = 'lazy';
-            img.style.width = '100%';
+            img.src = full; img.loading = 'lazy'; img.style.width = '100%';
             img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
-            const badge = document.createElement('a');
-            badge.href = full;
-            badge.target = '_blank';
-            badge.textContent = '▶ Open WebM';
-            badge.style.cssText = 'position:absolute;bottom:4px;left:0;right:0;text-align:center;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;padding:4px;text-decoration:none;';
-            wrapper.appendChild(img);
-            wrapper.appendChild(badge);
-            item.appendChild(wrapper);
+            item.appendChild(img);
             return item;
         }
 
-        if (isVideo) {
-            // Render video directly — required for iPhone autoplay
-            const video = document.createElement('video');
-            video.src = full;
-            video.controls = true;
-            video.autoplay = false;   // don't autoplay all at once — too heavy
-            video.loop = true;
-            video.muted = true;        // required for any autoplay on iOS
-            video.playsInline = true;  // critical: prevents iOS fullscreen takeover
-            video.preload = 'none';    // save bandwidth until tapped
-            video.style.width = '100%';
-            video.setAttribute('playsinline', '');       // belt-and-suspenders for older iOS
-            video.setAttribute('webkit-playsinline', '');
-            video.onerror = () => {
-                video.replaceWith(Object.assign(document.createElement('p'), {
-                    textContent: '⚠ Video failed to load',
-                    style: 'text-align:center;color:red;padding:8px;'
-                }));
+        // ── MP4 ──
+        if (extLower.includes('mp4')) {
+            const v = makeVideoElement(full);
+            v.autoplay = false;
+            v.preload = 'metadata';
+            v.onerror = () => {
+                const p = document.createElement('p');
+                p.textContent = '⚠ Video failed'; p.style.cssText = 'color:red;padding:8px;text-align:center';
+                item.replaceChild(p, v);
             };
-            // Tap to play/pause
-            video.addEventListener('click', () => {
-                video.paused ? video.play() : video.pause();
-            });
-            item.appendChild(video);
-
-        } else if (isGif) {
-            // Animated GIFs work fine as <img> on iOS
-            const img = document.createElement('img');
-            img.src = full;
-            img.loading = 'lazy';
-            img.style.width = '100%';
-            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
-            item.appendChild(img);
-
-        } else {
-            // Static image — show thumbnail, tap to swap in full res
-            const link = document.createElement('a');
-            link.href = full;
-            const img = document.createElement('img');
-            img.src = thumb;
-            img.loading = 'lazy';
-            img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
-            link.appendChild(img);
-            link.onclick = (e) => {
-                e.preventDefault();
-                const full_img = document.createElement('img');
-                full_img.src = full;
-                full_img.style.width = '100%';
-                full_img.onerror = () => { full_img.src = 'https://placehold.co/200x200?text=Load+Error'; };
-                item.replaceChild(full_img, link);
-            };
-            item.appendChild(link);
+            item.appendChild(v);
+            return item;
         }
 
+        // ── WebM ──
+        if (extLower.includes('webm')) {
+            const thumbImg = document.createElement('img');
+            thumbImg.src = thumb; thumbImg.loading = 'lazy'; thumbImg.style.width = '100%';
+            thumbImg.onerror = () => { thumbImg.src = 'https://placehold.co/200x200?text=No+Preview'; };
+            item.appendChild(thumbImg);
+
+            if (isSafari) {
+                // Convert overlay
+                const overlay = document.createElement('div');
+                overlay.className = 'convert-btn';
+                overlay.innerHTML = `<span class="icon">▶</span><span>Tap to Convert &amp; Play</span><span class="label">WebM → MP4 on-device</span>`;
+                item.appendChild(overlay);
+
+                let converting = false;
+                overlay.addEventListener('click', async () => {
+                    if (converting) return;
+                    converting = true;
+                    overlay.innerHTML = `<span class="icon">⚙️</span><span>Converting…</span>`;
+
+                    const progressWrap = document.createElement('div');
+                    progressWrap.className = 'progress-wrap';
+                    const label = document.createElement('div');
+                    label.textContent = 'Starting…';
+                    const bar = document.createElement('div');
+                    bar.className = 'progress-bar'; bar.style.width = '0%';
+                    progressWrap.appendChild(label);
+                    progressWrap.appendChild(bar);
+                    item.appendChild(progressWrap);
+
+                    try {
+                        const mp4Url = await convertWebmToMp4(full, pct => {
+                            label.textContent = `Converting: ${pct}%`;
+                            bar.style.width = pct + '%';
+                        });
+                        item.innerHTML = '';
+                        const v = makeVideoElement(mp4Url);
+                        item.appendChild(v);
+                        v.play().catch(() => {});
+                    } catch (err) {
+                        item.removeChild(overlay);
+                        item.removeChild(progressWrap);
+                        const p = document.createElement('p');
+                        p.textContent = '⚠ Convert failed: ' + err.message;
+                        p.style.cssText = 'color:red;padding:8px;font-size:11px;text-align:center';
+                        item.appendChild(p);
+                    }
+                });
+            } else {
+                // Non-Safari: play WebM directly
+                item.innerHTML = '';
+                const v = makeVideoElement(full);
+                v.autoplay = false; v.preload = 'metadata';
+                item.appendChild(v);
+            }
+            return item;
+        }
+
+        // ── Static image ──
+        const link = document.createElement('a');
+        link.href = full;
+        const img = document.createElement('img');
+        img.src = thumb; img.loading = 'lazy';
+        img.onerror = () => { img.src = 'https://placehold.co/200x200?text=No+Preview'; };
+        link.appendChild(img);
+        link.onclick = e => {
+            e.preventDefault();
+            const fi = document.createElement('img');
+            fi.src = full; fi.style.width = '100%';
+            fi.onerror = () => { fi.src = 'https://placehold.co/200x200?text=Load+Error'; };
+            item.replaceChild(fi, link);
+        };
+        item.appendChild(link);
         return item;
+    }
+
+    // ── Loaders ───────────────────────────────────────────────────────────
+    async function loadFrom4chan(board, searchTerm) {
+        try {
+            setStatus('Loading from 4chan…');
+            const data = await fetchWithFallback(`https://a.4cdn.org/${board}/catalog.json`);
+            let threads = [];
+            data.forEach(page => threads = threads.concat(page.threads));
+            if (searchTerm) {
+                const terms = searchTerm.toLowerCase().split(' ');
+                threads = threads.filter(t => {
+                    const txt = ((t.sub || '') + ' ' + (t.com || '')).toLowerCase();
+                    return terms.every(term => txt.includes(term));
+                });
+            }
+            let count = 0;
+            threads.forEach(t => {
+                if (t.tim) {
+                    gallery.appendChild(createGalleryItem(
+                        `https://t.4cdn.org/${board}/${t.tim}s.jpg`,
+                        `https://i.4cdn.org/${board}/${t.tim}${t.ext}`,
+                        t.ext
+                    ));
+                    count++;
+                }
+            });
+            setStatus(`4chan: ${count} items.`);
+        } catch (e) { showError('4chan error: ' + e.message); }
+    }
+
+    async function loadFromDanbooru(searchTerm) {
+        let tags = 'rating:general';
+        if (searchTerm) tags += '+' + searchTerm.trim().replace(/ /g, '+');
+        try {
+            setStatus('Loading from Danbooru…');
+            const data = await fetchWithFallback(`https://danbooru.donmai.us/posts.json?tags=${tags}&limit=50`);
+            let count = 0;
+            data.forEach(p => {
+                const thumb = p.preview_file_url || p.large_file_url || p.file_url;
+                const full  = p.file_url || p.large_file_url;
+                if (!thumb || !full) return;
+                gallery.appendChild(createGalleryItem(thumb, full, '.' + (p.file_ext || 'jpg').toLowerCase()));
+                count++;
+            });
+            setStatus(`Danbooru: ${count} items.`);
+        } catch (e) { showError('Danbooru error: ' + e.message); }
     }
 
     function loadContent() {
         errorDiv.textContent = '';
         gallery.innerHTML = '';
         statusDiv.textContent = '';
-        const searchTerm = searchInput.value.trim();
-        const board = boardSelect.value;
-        loadFrom4chan(board, searchTerm);
-        loadFromDanbooru(searchTerm);
+        loadFrom4chan(boardSelect.value, searchInput.value.trim());
+        loadFromDanbooru(searchInput.value.trim());
     }
 
-    // Initial load
     loadContent();
 </script>
 ```
